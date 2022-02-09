@@ -1,6 +1,6 @@
 #!/bin/bash
-###ONLY READS OBJECTS. SCRIPT IS AS IS.
-###Please hard code your client_id + api password in Line 14 of the script.
+###ONLY READS OBJECTS. SCRIPT IS AS IS. V2
+###Please hard code your client_id + api password in Line 25 of the script.
 #This script will find devices that have protect installed and will check Jamf Protect to see if the device is present. If Protect is installed and not found in the Protect tenant it is likely either enrolled into a different tenant or appears as null
 protect_tenant='' #Just need the tenant name so just the first part of your protect url
 client_id='' #see https://docs.jamf.com/jamf-protect/documentation/Jamf_Protect_API.html
@@ -9,18 +9,29 @@ jssurl='' #Full Jamf Pro URL (with HTTPS)
 jssuser='' #admin user name
 jsspass='' #admin password
 groupname_raw='' #Smart group that has devices with protect installed
+workspace=$(ls /tmp/ | grep -w "protect_workspace")
+date_time=$(date +%F+%H+%M+%s)
+####WorkSpace Check#####
+if [[ "$workspace" == "protect_workspace" ]]; then
+	echo "its ran before - Rename"
+	mv /tmp/protect_workspace /tmp/${date_time}protect_workspace
+	mkdir /tmp/protect_workspace
+else
+	echo "not there lets create it"
+	mkdir /tmp/protect_workspace
+fi
 ####ACCESS TOKEN####
 #Note Need the access token
 access_token=$(curl --request POST --header 'content-type: application/json' --url "https://${protect_tenant}.protect.jamfcloud.com/token" --data '{"client_id": "CLIENT_ID_HERE", "password": "API_PASSWORD_HERE"}' | python -c 'import json,sys;obj=json.load(sys.stdin);print obj ["access_token"]' )
 #############################
 ###Protect Action###
 ###Grab a list of serial numbers###
-curl --header "Content-Type: application/json" --header "Authorization: ${access_token}" -X POST "https://${protect_tenant}.protect.jamfcloud.com/graphql" --data '{"query": "query {listComputers {items {serial}}}"}' | python -c 'import json,sys;obj=json.load(sys.stdin);print obj ["data"]["listComputers"]["items"]' > /tmp/raw_data.json
+curl --header "Content-Type: application/json" --header "Authorization: ${access_token}" -X POST "https://${protect_tenant}.protect.jamfcloud.com/graphql" --data '{"query": "query {listComputers {items {serial}}}"}' | python -c 'import json,sys;obj=json.load(sys.stdin);print obj ["data"]["listComputers"]["items"]' > /tmp/protect_workspace/raw_data.json
 ####Convert the list to just serial numbers.
 raw_protect_data=$(cat /tmp/raw_data.json)
 IFS=', ' read -r -a array <<< "$raw_protect_data"
 for (( raw_protect_data=1; raw_protect_data<=(${#array[@]}-1); raw_protect_data+=2 )); do
-echo ${array[$raw_protect_data]} | tr -d "u'}]" >> /tmp/protect_serials.log
+echo ${array[$raw_protect_data]} | tr -d "u'}]" >> /tmp/protect_workspace/protect_serials.log
 done
 #######
 ###Getting information from Jamf Pro
@@ -36,9 +47,10 @@ for mac_serial in ${jamfproserialraw};do
 #check the protect list for serial number from pro
 results=$(cat /tmp/protect_serials.log | grep "${mac_serial}")
 if [[ "${results}" == "${mac_serial}" ]]; then
-echo "${mac_serial} found in protect" >> /tmp/final_report.log
+echo "${mac_serial} found in protect" >> /tmp/protect_workspace/final_report.log
 else
-echo "${mac_serial} Not Found in Protect" >> /tmp/final_report.log
+echo "${mac_serial} Not Found in Protect" >> /tmp/protect_workspace/final_report.log
 fi
+echo "${mac_serial}" >> /tmp/protect_workspace/Jamf_Pro_serials.log
 done
-echo "the final report can be found in /tmp/final_report.log"
+echo "the final report can be found in /tmp/protect_workspace/final_report.log"
